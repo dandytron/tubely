@@ -1,10 +1,11 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -36,32 +37,43 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	const MaxMemory = 10 << 20
 	r.ParseMultipartForm(MaxMemory)
 
-	file, header, err := r.FormFile("thumbnail")
+	multipartFile, header, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
 		return
 	}
-	defer file.Close()
+	defer multipartFile.Close()
 
 	// Get the media type from the form file's Content-Type header
-	mediaType := header.Header.Get("Content-Type")
-	if mediaType == "" {
-		respondWithError(w, http.StatusBadRequest, "Missing Content-Type for thumbnail", nil)
-		return
-	}
-
-	// Read all the image data into a byte slice using io.ReadAll
-	imageData, err := io.ReadAll(file)
+	// Use the mime.ParseMediaType function to get the media type from the Content-Type header
+	mediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Unable to read image data from file", err)
+		respondWithError(w, http.StatusInternalServerError, "Could not parse header content-type into mediatype", err)
 		return
 	}
 
-	// Use base64.StdEncoding.EncodeToString from the encoding/base64 package to convert the image data to a base64 string
-	base64DataString := base64.StdEncoding.EncodeToString(imageData)
+	// Instead of encoding to base64, update the handler to save the bytes to a file at the path /assets/<videoID>.<file_extension>
+	// Use the Content-Type header to determine the file extension.
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid file type", nil)
+		return
+	}
 
-	// Create a data URL with the media type and base64 encoded image data. The format is: data:<media-type>;base64,<data>
-	thumbnailDataURL := fmt.Sprintf("data:%s;base64,%s", mediaType, base64DataString)
+	assetPath := getAssetPath(mediaType)
+	assetDiskPath := cfg.getAssetDiskPath(assetPath)
+
+	// Use os.Create to create the new file
+	destinationFile, err := os.Create(assetDiskPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error in creating filepath", err)
+		return
+	}
+	defer destinationFile.Close()
+	//Copy the contents from the multipart.File to the new file on disk using io.Copy
+	if _, err = io.Copy(destinationFile, multipartFile); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error in copying to destination filepath", err)
+		return
+	}
 
 	// Get the video's metadata from the SQLite database. The apiConfig's db has a GetVideo method you can use
 	videoMetadata, err := cfg.db.GetVideo(videoID)
@@ -69,16 +81,15 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusInternalServerError, "Could not retrieve video metadata with provided ID", err)
 		return
 	}
-
 	//If the authenticated user is not the video owner, return a http.StatusUnauthorized response
 	if videoMetadata.UserID != userID {
 		respondWithError(w, http.StatusUnauthorized, "User ID does not match the video creator's ID", nil)
 		return
 	}
 
-	videoMetadata.ThumbnailURL = &thumbnailDataURL
-
-	// Thumbnail URL should have this format: http://localhost:<port>/api/thumbnails/{videoID}
+	// Thumbnail URL: http://localhost:<port>/assets/<videoID>.<file_extension>
+	url := cfg.getAssetURL(assetPath)
+	videoMetadata.ThumbnailURL = &url
 	err = cfg.db.UpdateVideo(videoMetadata)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not update video", err)
