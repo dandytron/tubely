@@ -23,6 +23,10 @@ func (cfg *apiConfig) handlerRefresh(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusUnauthorized, "Couldn't get user for refresh token", err)
 		return
 	}
+	if user == nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid refresh token", nil)
+		return
+	}
 
 	accessToken, err := auth.MakeJWT(
 		user.ID,

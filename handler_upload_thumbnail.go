@@ -35,7 +35,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	// Bit shifting is a way to multiply by powers of 2. 10 << 20 is the same as 10 * 1024 * 1024, which is 10MB.
 	const MaxMemory = 10 << 20
-	r.ParseMultipartForm(MaxMemory)
+	err = r.ParseMultipartForm(MaxMemory)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to parse multipart form", err)
+		return
+	}
 
 	multipartFile, header, err := r.FormFile("thumbnail")
 	if err != nil {
