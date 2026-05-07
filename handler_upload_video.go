@@ -150,8 +150,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Thumbnail URL: http://localhost:<port>/assets/<videoID>.<file_extension>
-	s3Url := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, key)
+	s3Url := fmt.Sprintf("%s/%s", cfg.s3CfDistribution, key)
 	videoMetadata.VideoURL = &s3Url
 	err = cfg.db.UpdateVideo(videoMetadata)
 	if err != nil {
@@ -218,3 +217,4 @@ func (cfg *apiConfig) processVideoForFastStart(filepath string) (string, error) 
 
 	return output_filepath, nil
 }
+

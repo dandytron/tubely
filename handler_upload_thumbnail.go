@@ -66,6 +66,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	assetPath := getAssetPath(mediaType)
 	assetDiskPath := cfg.getAssetDiskPath(assetPath)
 
+	// Get the video's metadata from the SQLite database. The apiConfig's db has a GetVideo method you can use
+	videoMetadata, err := cfg.db.GetVideo(videoID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not retrieve video metadata with provided ID", err)
+		return
+	}
+	//If the authenticated user is not the video owner, return a http.StatusUnauthorized response
+	if videoMetadata.UserID != userID {
+		respondWithError(w, http.StatusUnauthorized, "User ID does not match the video creator's ID", nil)
+		return
+	}
+
 	// Use os.Create to create the new file
 	destinationFile, err := os.Create(assetDiskPath)
 	if err != nil {
@@ -76,18 +88,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	//Copy the contents from the multipart.File to the new file on disk using io.Copy
 	if _, err = io.Copy(destinationFile, multipartFile); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error in copying to destination filepath", err)
-		return
-	}
-
-	// Get the video's metadata from the SQLite database. The apiConfig's db has a GetVideo method you can use
-	videoMetadata, err := cfg.db.GetVideo(videoID)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Could not retrieve video metadata with provided ID", err)
-		return
-	}
-	//If the authenticated user is not the video owner, return a http.StatusUnauthorized response
-	if videoMetadata.UserID != userID {
-		respondWithError(w, http.StatusUnauthorized, "User ID does not match the video creator's ID", nil)
 		return
 	}
 
